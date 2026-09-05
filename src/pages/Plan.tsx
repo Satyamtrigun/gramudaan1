@@ -4,8 +4,6 @@ import { useOnboarding } from "@/lib/onboarding-context";
 import { buildAdvisoryPlan, simulateEmi, type AdvisoryPlan } from "@/engine/plan";
 import { generateFeasibility } from "@/data/feasibility";
 import { formatIndianCurrency, getVerdictColor, getVerdictIcon } from "@/data/assessment";
-import { Navbar } from "@/components/Navbar";
-import { Footer } from "@/components/Footer";
 import { CurrencyInput } from "@/components/ui/CurrencyInput";
 import { ProgressStepper } from "@/components/ui/ProgressStepper";
 import {
@@ -131,7 +129,6 @@ export default function Plan() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <Navbar variant="app" />
       <main className="flex-1 mx-auto max-w-3xl w-full px-4 py-6 sm:py-8">
         {/* Journey header */}
         <div className="mb-5">
@@ -231,7 +228,6 @@ export default function Plan() {
           </div>
         )}
       </main>
-      <Footer />
     </div>
   );
 }

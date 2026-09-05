@@ -23,6 +23,8 @@ import {
   Bot, User, AlertCircle, Play, Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useLocation } from "react-router";
+import { isShellPath } from "./AppShell";
 
 interface ChatMessage {
   id: string;
@@ -69,6 +71,8 @@ function applyContextChange(
 }
 
 export function VoiceAssistant() {
+  const { pathname } = useLocation();
+  const isAppShell = isShellPath(pathname);
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState("");
@@ -401,7 +405,9 @@ export function VoiceAssistant() {
       {!isOpen && (
         <button
           onClick={openPanel}
-          className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-full bg-primary text-primary-foreground px-5 py-3.5 shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/25 hover:-translate-y-0.5 transition-all duration-200"
+          className={`fixed z-50 flex items-center gap-2 rounded-full bg-primary text-primary-foreground px-5 py-3.5 shadow-lg shadow-primary/20 hover:shadow-xl hover:shadow-primary/25 hover:-translate-y-0.5 transition-all duration-200 ${
+            isAppShell ? "bottom-20 right-4 sm:bottom-6 sm:right-6" : "bottom-6 right-6"
+          }`}
           aria-label="Open GramUdaan Voice Advisor"
         >
           <Bot className="h-5 w-5" />

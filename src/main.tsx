@@ -6,7 +6,7 @@ import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { ConvexReactClient } from "convex/react";
 import React, { StrictMode, useEffect, lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Route, Routes, useLocation } from "react-router";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router";
 import "./index.css";
 // Leaflet styles belong to the app shell (static <link> in the built
 // index.html), NOT to a lazy route chunk. Imported from a route component
@@ -16,14 +16,20 @@ import "./index.css";
 import "leaflet/dist/leaflet.css";
 import { OnboardingProvider } from "./lib/onboarding-context";
 import { VoiceAssistant } from "./components/VoiceAssistant";
+import AppShell from "./components/AppShell";
 
 // Lazy load route components
 const Landing = lazy(() => import("./pages/Landing.tsx"));
 const AuthPage = lazy(() => import("./pages/Auth.tsx"));
 const Onboarding = lazy(() => import("./pages/Onboarding.tsx"));
 const Dashboard = lazy(() => import("./pages/Dashboard.tsx"));
+const Analysis = lazy(() => import("./pages/Analysis.tsx"));
+const Finance = lazy(() => import("./pages/Finance.tsx"));
+const Market = lazy(() => import("./pages/Market.tsx"));
+const Schemes = lazy(() => import("./pages/Schemes.tsx"));
+const Reports = lazy(() => import("./pages/Reports.tsx"));
+const Profile = lazy(() => import("./pages/Profile.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
-const Placeholder = lazy(() => import("./pages/Placeholder.tsx"));
 const Advisor = lazy(() => import("./pages/Advisor.tsx"));
 const WhatIf = lazy(() => import("./pages/WhatIf.tsx"));
 const Compare = lazy(() => import("./pages/Compare.tsx"));
@@ -137,35 +143,39 @@ createRoot(document.getElementById("root")!).render(
           <OnboardingProvider>
           <Suspense fallback={<RouteLoading />}>
             <Routes>
+              {/* ── Public ── */}
               <Route path="/" element={<Landing />} />
               <Route
                 path="/auth"
                 element={<AuthPage redirectAfterAuth="/onboarding" />}
               />
+              {/* Onboarding stays a separate, focused flow (not inside the app shell) */}
               <Route path="/onboarding" element={<Onboarding />} />
+
+              {/* ── GramUdaan app (authenticated shell: header, sidebar, bottom nav) ── */}
               <Route
-                path="/dashboard"
                 element={
                   <RequireAuth>
-                    <Dashboard />
+                    <AppShell />
                   </RequireAuth>
                 }
-              />
-              <Route path="/advisor" element={<Advisor />} />
-              <Route path="/plan" element={<Plan />} />
-              <Route path="/what-if" element={<WhatIf />} />
-              <Route path="/compare" element={<Compare />} />
-              <Route path="/report" element={<Report />} />
-              <Route
-                path="/application"
-                element={
-                  <RequireAuth>
-                    <Application />
-                  </RequireAuth>
-                }
-              />
-              <Route path="/saved" element={<Placeholder type="saved" />} />
-              <Route path="/settings" element={<Placeholder type="settings" />} />
+              >
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/advisor" element={<Advisor />} />
+                <Route path="/analysis" element={<Analysis />} />
+                <Route path="/finance" element={<Finance />} />
+                <Route path="/market" element={<Market />} />
+                <Route path="/schemes" element={<Schemes />} />
+                <Route path="/reports" element={<Reports />} />
+                <Route path="/settings" element={<Profile />} />
+                <Route path="/plan" element={<Plan />} />
+                <Route path="/what-if" element={<WhatIf />} />
+                <Route path="/compare" element={<Compare />} />
+                <Route path="/report" element={<Report />} />
+                <Route path="/application" element={<Application />} />
+              </Route>
+
+              <Route path="/saved" element={<Navigate to="/reports" replace />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </Suspense>

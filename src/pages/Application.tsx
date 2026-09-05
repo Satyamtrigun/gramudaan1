@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useOnboarding } from "@/lib/onboarding-context";
 import { formatIndianCurrency } from "@/data/assessment";
-import { Navbar } from "@/components/Navbar";
-import { Footer } from "@/components/Footer";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { matchSchemesForProfileSource, type SchemeMatch } from "@/engine/schemeMatching";
@@ -113,7 +111,6 @@ export default function Application() {
   if (!feasibility || !business || !location) {
     return (
       <div className="min-h-screen bg-background flex flex-col">
-        <Navbar variant="app" />
         <div className="flex-1 flex items-center justify-center px-4">
           <div className="text-center max-w-md animate-fade-in">
             <div className="h-16 w-16 rounded-2xl bg-muted mx-auto mb-4 flex items-center justify-center">
@@ -209,17 +206,7 @@ export default function Application() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <Navbar variant="app" />
       <main className="mx-auto w-full max-w-5xl px-4 sm:px-6 py-6 sm:py-8 flex-1">
-        {/* Breadcrumb + header */}
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-4">
-          <Link to="/" className="hover:text-foreground transition-colors"><Home className="h-3.5 w-3.5" /></Link>
-          <ChevronRight className="h-3 w-3" />
-          <Link to="/dashboard" className="hover:text-foreground transition-colors">Dashboard</Link>
-          <ChevronRight className="h-3 w-3" />
-          <span className="text-foreground font-medium">Loan Application</span>
-        </div>
-
         <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-5">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
@@ -654,7 +641,6 @@ export default function Application() {
           </div>
         )}
       </main>
-      <Footer />
     </div>
   );
 }

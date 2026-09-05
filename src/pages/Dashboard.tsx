@@ -16,12 +16,230 @@ import {
   Users, Lightbulb, ShieldCheck, AlertTriangle, Target,
   TrendingUp, IndianRupee, CheckCircle2, ArrowUpRight,
   Zap, ChevronRight, CircleDot, Home, Store, Calculator,
-  Clock, AlertCircle, Brain, ArrowRight,
+  Clock, AlertCircle, Brain, ArrowRight, FileText, LayoutDashboard,
 } from "lucide-react";
-import { Link } from "react-router";
+import { Link, NavLink } from "react-router";
 import { cn } from "@/lib/utils";
+import { ModuleEmptyState, StatCard } from "@/components/module-ui";
 
+/* ════════════════════════════════════════════════════════════════════════════
+ * GRAMUDAAN APP HOME — the compact command centre.
+ * Detailed analysis lives in the dedicated modules (Business Analysis,
+ * Financial Planning, Market & Competition, Schemes…). This page shows the
+ * essentials and routes you to the right module.
+ * ════════════════════════════════════════════════════════════════════════════ */
 export default function Dashboard() {
+  const { feasibility, location, business, capital, radius, subCategory } = useOnboarding();
+
+  if (!feasibility || !business) {
+    return (
+      <ModuleEmptyState
+        title="Welcome to your GramUdaan workspace"
+        description="Tell us where you are, which business you are thinking about, and how much you can invest. GramUdaan will build a personalized feasibility and financial analysis — this dashboard then becomes your command centre."
+        icon={<Store className="h-8 w-8 text-muted-foreground" />}
+        primaryLabel="Start Assessment"
+      />
+    );
+  }
+
+  const f = feasibility;
+  const locationLabel = location ? `${location.name}, ${location.district}` : "Selected Location";
+  const available = f.financial.availableContribution || capital || 0;
+  const projectCost = f.financial.totalProjectCost || 0;
+  const loanNeed = f.financial.potentialLoan || 0;
+  const monthlyRevenue = f.profitModel?.monthlyRevenue ?? f.financial.affordability?.expectedRevenue ?? null;
+  const bizLabel = subCategory ? `${business.icon} ${business.name} · ${subCategory.name}` : `${business.icon} ${business.name}`;
+
+  const labelFor = (s: number) => (s >= 70 ? "Healthy" : s >= 50 ? "Moderate" : "Needs attention");
+
+  const primaryModules = [
+    {
+      to: "/analysis",
+      icon: <ShieldCheck className="h-5 w-5" />,
+      title: "Business Analysis",
+      score: f.overallScore,
+      meta: `Feasibility ${f.overallScore}/100 · ${f.verdictLabel}`,
+      hint: "SWOT · risks · pricing · final decision",
+    },
+    {
+      to: "/finance",
+      icon: <IndianRupee className="h-5 w-5" />,
+      title: "Financial Planning",
+      score: f.subScores?.financialFitScore ?? 0,
+      meta: loanNeed > 0 ? `Funding need ${formatIndianCurrency(loanNeed)}` : "No external funding needed",
+      hint: "Cost breakdown · capital · profit & break-even",
+    },
+    {
+      to: "/market",
+      icon: <Target className="h-5 w-5" />,
+      title: "Market & Competition",
+      score: f.subScores?.marketScore ?? 0,
+      meta: `${f.competition.density.toUpperCase()} competition · ${f.competition.totalBusinesses} nearby`, 
+      hint: "Local demand · competitors · map",
+    },
+  ];
+
+  const secondaryModules = [
+    {
+      to: "/advisor",
+      icon: <Brain className="h-5 w-5" />,
+      title: "Ask AI Advisor",
+      hint: "Ask anything about this analysis — it knows your numbers.",
+    },
+    {
+      to: "/plan",
+      icon: <Calculator className="h-5 w-5" />,
+      title: "My Plan (8 steps)",
+      hint: "Guided journey from location to final action plan.",
+    },
+    {
+      to: "/schemes",
+      icon: <Store className="h-5 w-5" />,
+      title: "Schemes & Financing",
+      hint: "Government schemes and loan options matched to your profile.",
+    },
+    {
+      to: "/compare",
+      icon: <ArrowRight className="h-5 w-5" />,
+      title: "Compare Businesses",
+      hint: "Your idea vs alternatives — side by side.",
+    },
+    {
+      to: "/reports",
+      icon: <FileText className="h-5 w-5" />,
+      title: "Reports & Documents",
+      hint: "Decision report · business plan · loan application draft.",
+    },
+  ];
+
+  return (
+    <div className="space-y-5">
+      {/* ── Hero: your business at a glance ── */}
+      <HeroScore
+        score={f.overallScore}
+        verdict={f.verdict}
+        verdictLabel={f.verdictLabel}
+        businessName={bizLabel}
+        locationName={locationLabel}
+        radius={radius}
+        subScores={f.subScores}
+      />
+      <BusinessAtGlance decision={f.decision} verdict={f.verdict} />
+
+      {/* ── Key financial numbers ── */}
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <StatCard label="Your Capital" value={formatIndianCurrency(available)} sub={`for ${location ? location.name : "your location"}`} />
+        <StatCard label="Total Project Cost" value={formatIndianCurrency(projectCost)} sub="estimated setup + working capital" />
+        {loanNeed > 0 ? (
+          <StatCard label="Funding Need" value={formatIndianCurrency(loanNeed)} tone="warning" sub="loan / scheme / partner gap" />
+        ) : (
+          <StatCard label="Funding Gap" value="₹0 — covered" tone="positive" sub="no loan needed on current inputs" />
+        )}
+        {monthlyRevenue != null ? (
+          <StatCard label="Est. Monthly Revenue" value={formatIndianCurrency(monthlyRevenue)} tone="brand" sub="at recommended scale" />
+        ) : (
+          <StatCard label="Est. Monthly Revenue" value="—" sub="unlock after business-type step" />
+        )}
+      </div>
+
+      {/* ── Primary modules ── */}
+      <div>
+        <SectionTitle
+          icon={<LayoutDashboard className="h-4 w-4" />}
+          title="What is happening with my business?"
+          sub="Your feasibility, finances and market at a glance — dive into any module for details."
+        />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {primaryModules.map((m) => (
+            <NavLink
+              key={m.to}
+              to={m.to}
+              className="group rounded-2xl border border-border bg-white p-4 transition-all hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-600/10 text-emerald-700">{m.icon}</span>
+                <span className={cn(
+                  "rounded-full px-2 py-0.5 text-[10px] font-bold",
+                  m.score >= 70 ? "bg-emerald-50 text-emerald-700" : m.score >= 50 ? "bg-amber-50 text-amber-700" : "bg-red-50 text-red-600",
+                )}>
+                  {labelFor(m.score)}
+                </span>
+              </div>
+              <p className="mt-3 text-sm font-bold text-foreground">{m.title}</p>
+              <p className="text-xs font-semibold text-emerald-700">{m.meta}</p>
+              <p className="mt-1 text-[11px] text-muted-foreground">{m.hint}</p>
+              <span className="mt-3 inline-flex items-center gap-1 text-[11px] font-bold text-primary opacity-0 transition-opacity group-hover:opacity-100">
+                Open module <ArrowUpRight className="h-3 w-3" />
+              </span>
+            </NavLink>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Everything else ── */}
+      <div>
+        <SectionTitle
+          icon={<Zap className="h-4 w-4" />}
+          title="Explore every module"
+          sub="Each module is powered by this same analysis — change one input and everything updates."
+        />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          {secondaryModules.map((m) => (
+            <NavLink
+              key={m.to}
+              to={m.to}
+              className="group flex items-start gap-3 rounded-2xl border border-border bg-white p-3.5 transition-all hover:border-emerald-300 hover:bg-emerald-50/40"
+            >
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground transition-colors group-hover:bg-emerald-600/10 group-hover:text-emerald-700">
+                {m.icon}
+              </span>
+              <span className="min-w-0">
+                <span className="block text-xs font-bold text-foreground">{m.title}</span>
+                <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">{m.hint}</span>
+              </span>
+            </NavLink>
+          ))}
+        </div>
+      </div>
+
+      {/* ── What should you do next? ── */}
+      <ActionPlanSection nextSteps={f.nextSteps} verdict={f.verdict} />
+
+      <div className="flex flex-col items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-white px-5 py-4 sm:flex-row">
+        <p className="text-sm font-semibold text-foreground">
+          Ready to change an input? <span className="font-normal text-muted-foreground">Recalculate the whole plan in the guided journey.</span>
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link to="/plan" className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700">
+            Open My Plan <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
+          <Link to="/onboarding" className="inline-flex items-center gap-1.5 rounded-full border border-border bg-white px-4 py-2 text-xs font-bold text-foreground hover:bg-muted">
+            Edit Assessment
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SectionTitle({ icon, title, sub }: { icon: React.ReactNode; title: string; sub?: string }) {
+  return (
+    <div className="mb-3 flex items-start gap-2">
+      <span className="mt-0.5 flex h-7 w-7 items-center justify-center rounded-lg bg-primary/5 text-primary">{icon}</span>
+      <div>
+        <h2 className="font-serif-display text-base font-bold text-foreground">{title}</h2>
+        {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+ * LEGACY FULL ANALYSIS VIEW — every section in one long page. Kept intact and
+ * exported so modules can be composed from the same components; the dedicated
+ * modules below replace this long-page experience.
+ * ════════════════════════════════════════════════════════════════════════════ */
+export function AnalysisDashboardView() {
   const { feasibility, location, business, capital, radius } = useOnboarding();
 
   if (!feasibility) {
@@ -167,7 +385,7 @@ export default function Dashboard() {
 }
 
 /* ═══ HERO SCORE ═══ */
-function HeroScore({ score, verdict, verdictLabel, businessName, locationName, radius, subScores }: {
+export function HeroScore({ score, verdict, verdictLabel, businessName, locationName, radius, subScores }: {
   score: number; verdict: "good" | "caution" | "rethink"; verdictLabel: string; businessName: string;
   locationName: string; radius: number; subScores?: {
     marketScore: number; opportunityScore: number; competitionScore: number;
@@ -254,7 +472,7 @@ function HeroScore({ score, verdict, verdictLabel, businessName, locationName, r
 }
 
 /* ═══ BUSINESS AT A GLANCE ═══ */
-function BusinessAtGlance({ decision, verdict }: { decision: { whyPoints: string[]; watchOuts: string[] }; verdict: string }) {
+export function BusinessAtGlance({ decision, verdict }: { decision: { whyPoints: string[]; watchOuts: string[] }; verdict: string }) {
   const signals = [
     {
       icon: <CheckCircle2 className="h-4 w-4" />,
@@ -302,7 +520,7 @@ function BusinessAtGlance({ decision, verdict }: { decision: { whyPoints: string
 }
 
 /* ═══ DECISION SECTION ═══ */
-function DecisionSection({ f, business, locationLabel }: {
+export function DecisionSection({ f, business, locationLabel }: {
   f: any; business: any; locationLabel: string; verdict: "good" | "caution" | "rethink";
 }) {
   return (
@@ -367,7 +585,7 @@ function DecisionSection({ f, business, locationLabel }: {
 }
 
 /* ═══ MARKET REACH ═══ */
-function MarketReachSection({ f }: { f: any }) {
+export function MarketReachSection({ f }: { f: any }) {
   const { ref, isInView } = useInView();
   const householdPct = Math.min(100, (f.marketReach.households / 5000) * 100);
   const customerPct = Math.min(100, (f.marketReach.potentialCustomers / 20000) * 100);
@@ -424,7 +642,7 @@ function MarketReachSection({ f }: { f: any }) {
 }
 
 /* ═══ OPPORTUNITY ═══ */
-function OpportunitySection({ f }: { f: any }) {
+export function OpportunitySection({ f }: { f: any }) {
   return (
     <SectionCard icon={<Lightbulb className="h-5 w-5" />} title="Opportunity" badge="AI Insight" badgeType="ai" score={f.subScores?.opportunityScore}>
       {/* Market Gap Card */}
@@ -475,7 +693,7 @@ function OpportunitySection({ f }: { f: any }) {
 }
 
 /* ═══ SWOT ═══ */
-function SWOTSection({ f }: { f: any }) {
+export function SWOTSection({ f }: { f: any }) {
   return (
     <SectionCard icon={<ShieldCheck className="h-5 w-5" />} title="SWOT Analysis" badge="Personalized" className="rounded-2xl border border-border bg-white p-5 sm:p-6">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
@@ -523,7 +741,7 @@ function SWOTQuadrant({ title, items, color }: { title: string; items: string[];
 }
 
 /* ═══ LOCAL RISKS ═══ */
-function RisksSection({ f }: { f: any }) {
+export function RisksSection({ f }: { f: any }) {
   const severityIcon: Record<string, string> = { high: "🔴", medium: "🟠", low: "🟢" };
   const severityBorder: Record<string, string> = { high: "border-l-red-400", medium: "border-l-amber-400", low: "border-l-emerald-400" };
 
@@ -573,7 +791,7 @@ function competitorPoints(
   });
 }
 
-function CompetitionSection({ f, location, radius }: { f: any; location: Location | null; radius: number }) {
+export function CompetitionSection({ f, location, radius }: { f: any; location: Location | null; radius: number }) {
   const densityColors: Record<string, string> = { high: "text-red-600", medium: "text-amber-600", low: "text-emerald-600" };
   const densityBg: Record<string, string> = { high: "bg-red-50 border-red-200", medium: "bg-amber-50 border-amber-200", low: "bg-emerald-50 border-emerald-200" };
 
@@ -640,7 +858,7 @@ function CompetitionSection({ f, location, radius }: { f: any; location: Locatio
 }
 
 /* ═══ PRICING ═══ */
-function PricingSection({ f }: { f: any }) {
+export function PricingSection({ f }: { f: any }) {
   return (
     <SectionCard icon={<TrendingUp className="h-5 w-5" />} title="Product Pricing" badge="AI Insight" badgeType="ai" className="rounded-2xl border border-border bg-white p-5 sm:p-6">
       {f.pricing.unit && (
@@ -673,7 +891,7 @@ function PricingSection({ f }: { f: any }) {
 }
 
 /* ═══ FINANCIAL OVERVIEW ═══ */
-function FinancialOverviewSection({ f }: { f: any }) {
+export function FinancialOverviewSection({ f }: { f: any }) {
   return (
     <SectionCard icon={<IndianRupee className="h-5 w-5" />} title="Financial Overview" badge="Engine" badgeType="verified" className="rounded-2xl border border-border bg-white p-5 sm:p-6 lg:col-span-2">
       {/* Funding Structure */}
@@ -837,7 +1055,7 @@ function CashFlowRow({ label, value, type, bold }: { label: string; value: numbe
 }
 
 /* ═══ ACTION PLAN ═══ */
-function ActionPlanSection({ nextSteps, verdict }: { nextSteps: string[]; verdict: string }) {
+export function ActionPlanSection({ nextSteps, verdict }: { nextSteps: string[]; verdict: string }) {
   const actionLabels = [
     "Validate Demand", "Secure Supply", "Validate Pricing",
     "Prepare Investment", "Explore Financing", "Prepare Documentation",

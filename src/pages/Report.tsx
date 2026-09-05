@@ -5,8 +5,6 @@ import { buildHyperlocalProfile } from "@/services/hyperlocal/profile";
 import { SWOTGrid } from "@/components/ui/SWOTGrid";
 import { DataConfidenceBadge } from "@/components/ui/DataConfidenceBadge";
 import { matchSchemesForProfileSource, type SchemeMatch } from "@/engine/schemeMatching";
-import { Navbar } from "@/components/Navbar";
-import { Footer } from "@/components/Footer";
 import {
   Home,
   ChevronRight,
@@ -29,7 +27,6 @@ export default function Report() {
   if (!feasibility) {
     return (
       <div className="min-h-screen bg-background flex flex-col">
-        <Navbar variant="app" />
         <div className="flex-1 flex items-center justify-center px-4">
           <div className="text-center max-w-md">
             <h2 className="text-xl font-bold text-foreground mb-2">No Report Available</h2>
@@ -78,21 +75,17 @@ export default function Report() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <Navbar variant="app" />
 
       <main className="flex-1 mx-auto max-w-4xl w-full px-4 py-6 sm:py-10">
-        {/* Breadcrumb */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Link to="/" className="hover:text-foreground transition-colors"><Home className="h-3.5 w-3.5" /></Link>
-            <ChevronRight className="h-3 w-3" />
-            <Link to="/dashboard" className="hover:text-foreground transition-colors">Dashboard</Link>
-            <ChevronRight className="h-3 w-3" />
-            <span className="text-foreground font-medium">Report</span>
+        {/* Module header */}
+        <div className="mb-6 flex items-center justify-between gap-3">
+          <div>
+            <h1 className="font-serif-display text-lg font-bold text-foreground sm:text-xl">Business Decision Report</h1>
+            <p className="mt-0.5 text-xs text-muted-foreground">Full feasibility document generated from your current GramUdaan analysis</p>
           </div>
           <button
             onClick={() => window.print()}
-            className="inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-xs font-semibold text-foreground hover:bg-muted transition-colors"
+            className="inline-flex shrink-0 items-center gap-2 rounded-full border border-border px-4 py-2 text-xs font-semibold text-foreground hover:bg-muted transition-colors"
           >
             <Printer className="h-3.5 w-3.5" />
             Print Report
@@ -483,7 +476,6 @@ export default function Report() {
         </div>
       </main>
 
-      <Footer />
     </div>
   );
 }

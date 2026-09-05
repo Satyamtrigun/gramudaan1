@@ -1,7 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useOnboarding } from "@/lib/onboarding-context";
-import { Navbar } from "@/components/Navbar";
-import { Footer } from "@/components/Footer";
 import {
   Send,
   Bot,
@@ -113,22 +111,8 @@ export default function Advisor() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <Navbar variant="app" />
 
       <main className="flex-1 flex flex-col max-w-3xl mx-auto w-full px-4 py-6">
-        {/* Breadcrumb */}
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-4">
-          <Link to="/" className="hover:text-foreground transition-colors">
-            <Home className="h-3.5 w-3.5" />
-          </Link>
-          <ChevronRight className="h-3 w-3" />
-          <Link to="/dashboard" className="hover:text-foreground transition-colors">
-            Dashboard
-          </Link>
-          <ChevronRight className="h-3 w-3" />
-          <span className="text-foreground font-medium">AI Advisor</span>
-        </div>
-
         {/* Header */}
         <div className="mb-6">
           <div className="flex items-center gap-3 mb-2">
@@ -290,7 +274,6 @@ export default function Advisor() {
         </div>
       </main>
 
-      <Footer />
     </div>
   );
 }

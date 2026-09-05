@@ -2,8 +2,6 @@ import { useState, useCallback } from "react";
 import { useOnboarding } from "@/lib/onboarding-context";
 import { generateFeasibility } from "@/data/feasibility";
 import { formatIndianCurrency, getVerdictColor, getVerdictIcon } from "@/data/assessment";
-import { Navbar } from "@/components/Navbar";
-import { Footer } from "@/components/Footer";
 import { CurrencyInput } from "@/components/ui/CurrencyInput";
 import { locations, type Location } from "@/data/locations";
 import { businessCategories, type BusinessCategory } from "@/data/businesses";
@@ -65,22 +63,8 @@ export default function WhatIf() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <Navbar variant="app" />
 
       <main className="flex-1 mx-auto max-w-5xl w-full px-4 py-6 sm:py-10">
-        {/* Breadcrumb */}
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-6">
-          <Link to="/" className="hover:text-foreground transition-colors">
-            <Home className="h-3.5 w-3.5" />
-          </Link>
-          <ChevronRight className="h-3 w-3" />
-          <Link to="/dashboard" className="hover:text-foreground transition-colors">
-            Dashboard
-          </Link>
-          <ChevronRight className="h-3 w-3" />
-          <span className="text-foreground font-medium">What-If Simulator</span>
-        </div>
-
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-2">
@@ -373,7 +357,6 @@ export default function WhatIf() {
         </div>
       </main>
 
-      <Footer />
     </div>
   );
 }
