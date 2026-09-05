@@ -1,6 +1,8 @@
 // Voice Service — Web Speech API for STT + TTS
 // Production-grade: mic permissions, Hindi voices, audio analyzer, clean lifecycle
 
+import { CONVEX_URL } from "@/lib/convexUrl";
+
 export type VoiceState = "idle" | "listening" | "thinking" | "speaking" | "error" | "permission_required";
 
 // ─── Speech Recognition (STT) ───
@@ -482,7 +484,7 @@ function stopManualRecordingCleanup(): void {
 export async function transcribeRecording(
   blob: Blob,
 ): Promise<{ text?: string; error?: "not_configured" | "empty" | "network" | "failed" | "no_speech" }> {
-  const convexUrl = (import.meta.env.VITE_CONVEX_URL as string | undefined) || "";
+  const convexUrl = CONVEX_URL;
   const siteUrl = convexUrl.replace(/\.convex\.cloud$/, ".convex.site");
   if (!siteUrl) return { error: "network" };
 

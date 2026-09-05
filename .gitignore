@@ -1,4 +1,10 @@
 .env.local
 node_modules
 dist
-src/convex/_generated
+
+# Convex generated code is committed so CI/deploy builds (tsc -b) succeed
+# on fresh clones without requiring a Convex login. Regenerate with:
+#   bunx convex codegen
+
+# Old local build artifacts, not part of the app
+isolate/

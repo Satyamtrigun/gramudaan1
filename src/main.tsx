@@ -8,6 +8,7 @@ import React, { StrictMode, useEffect, lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router";
 import "./index.css";
+import { CONVEX_URL } from "@/lib/convexUrl";
 // Leaflet styles belong to the app shell (static <link> in the built
 // index.html), NOT to a lazy route chunk. Imported from a route component
 // they ship as a runtime-injected async stylesheet, which can fail to apply
@@ -106,7 +107,7 @@ class RootErrorBoundary extends React.Component<
   }
 }
 
-const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL as string);
+const convex = new ConvexReactClient(CONVEX_URL);
 
 function RouteSyncer() {
   const location = useLocation();

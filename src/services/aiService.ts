@@ -1,6 +1,8 @@
 // AI Service — abstracts the AI provider
 // Server-side via Convex action (keeps API keys safe)
 
+import { CONVEX_URL } from "@/lib/convexUrl";
+
 export interface AIMessage {
   role: "system" | "user" | "assistant";
   content: string;
@@ -17,7 +19,7 @@ export async function getAIResponse(
 ): Promise<AIResponse> {
   try {
     const response = await fetch(
-      `${import.meta.env.VITE_CONVEX_URL}/api/ai/chat`,
+      `${CONVEX_URL}/api/ai/chat`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
