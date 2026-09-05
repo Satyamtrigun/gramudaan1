@@ -1,0 +1,133 @@
+export interface BusinessCategory {
+  id: string;
+  name: string;
+  nameHi: string;
+  icon: string;
+  description: string;
+  descriptionHi: string;
+  avgInvestment: string;
+  category: string;
+}
+
+export const businessCategories: BusinessCategory[] = [
+  {
+    id: "dairy",
+    name: "Dairy",
+    nameHi: "डेयरी",
+    icon: "🐄",
+    description: "Milk collection, processing and distribution",
+    descriptionHi: "दूध इकट्ठा करना, प्रसंस्करण और वितरण",
+    avgInvestment: "₹1,00,000 – ₹5,00,000",
+    category: "agriculture",
+  },
+  {
+    id: "grocery",
+    name: "Grocery",
+    nameHi: "किराना",
+    icon: "🏪",
+    description: "Daily essentials, FMCG and household items",
+    descriptionHi: "दैनिक आवश्यकताएं, FMCG और घरेलू सामान",
+    avgInvestment: "₹50,000 – ₹3,00,000",
+    category: "retail",
+  },
+  {
+    id: "poultry",
+    name: "Poultry",
+    nameHi: "मुर्गी पालन",
+    icon: "🐔",
+    description: "Chicken and egg production",
+    descriptionHi: "मुर्गी और अंडा उत्पादन",
+    avgInvestment: "₹1,50,000 – ₹8,00,000",
+    category: "agriculture",
+  },
+  {
+    id: "poultry-feed",
+    name: "Poultry Feed",
+    nameHi: "मुर्गी चारा",
+    icon: "🌾",
+    description: "Feed supply for poultry farms",
+    descriptionHi: "पोल्ट्री फार्म के लिए चारा आपूर्ति",
+    avgInvestment: "₹75,000 – ₹4,00,000",
+    category: "retail",
+  },
+  {
+    id: "clothing",
+    name: "Clothing",
+    nameHi: "कपड़े",
+    icon: "👗",
+    description: "Ready-made garments and tailoring",
+    descriptionHi: "रेडीमेड गारमेंट्स और सिलाई",
+    avgInvestment: "₹80,000 – ₹5,00,000",
+    category: "retail",
+  },
+  {
+    id: "mobile-repair",
+    name: "Mobile Repair",
+    nameHi: "मोबाइल रिपेयर",
+    icon: "📱",
+    description: "Phone repair, accessories and recharges",
+    descriptionHi: "फोन मरम्मत, एक्सेसरीज और रिचार्ज",
+    avgInvestment: "₹30,000 – ₹2,00,000",
+    category: "services",
+  },
+  {
+    id: "food-processing",
+    name: "Food Processing",
+    nameHi: "खाद्य प्रसंस्करण",
+    icon: "🥫",
+    description: "Spices, pickles, snacks and packaged food",
+    descriptionHi: "मसाले, अचार, स्नैक्स और पैकेज्ड फूड",
+    avgInvestment: "₹1,00,000 – ₹6,00,000",
+    category: "manufacturing",
+  },
+  {
+    id: "agri-inputs",
+    name: "Agriculture Inputs",
+    nameHi: "कृषि इनपुट",
+    icon: "🌱",
+    description: "Seeds, fertilizers, pesticides and tools",
+    descriptionHi: "बीज, उर्वरक, कीटनाशक और उपकरण",
+    avgInvestment: "₹1,00,000 – ₹5,00,000",
+    category: "retail",
+  },
+  {
+    id: "retail",
+    name: "Retail",
+    nameHi: "रिटेल",
+    icon: "🛒",
+    description: "General store, variety and convenience shop",
+    descriptionHi: "जनरल स्टोर, वैरायटी और कन्वीनिएंस शॉप",
+    avgInvestment: "₹50,000 – ₹3,00,000",
+    category: "retail",
+  },
+  {
+    id: "services",
+    name: "Services",
+    nameHi: "सेवाएं",
+    icon: "🔧",
+    description: "Tailoring, salon, repair, tutoring",
+    descriptionHi: "सिलाई, सैलून, मरम्मत, ट्यूशन",
+    avgInvestment: "₹20,000 – ₹2,00,000",
+    category: "services",
+  },
+  {
+    id: "manufacturing",
+    name: "Manufacturing",
+    nameHi: "विनिर्माण",
+    icon: "🏭",
+    description: "Small-scale production and加工",
+    descriptionHi: "छोटे पैमाने पर उत्पादन",
+    avgInvestment: "₹2,00,000 – ₹10,00,000",
+    category: "manufacturing",
+  },
+  {
+    id: "other",
+    name: "Other",
+    nameHi: "अन्य",
+    icon: "💡",
+    description: "Tell us about your unique business idea",
+    descriptionHi: "अपने अनूठे व्यापार विचार के बारे में बताएं",
+    avgInvestment: "Varies",
+    category: "other",
+  },
+];
