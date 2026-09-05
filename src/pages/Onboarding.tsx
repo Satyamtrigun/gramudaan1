@@ -59,6 +59,7 @@ function OnboardingInner() {
     subCategory, setSubCategory, placeStatus, setPlaceStatus,
     rentMonthly, setRentMonthly, scaleChoice, setScaleChoice,
     businessAnswers, setBusinessAnswer,
+    otherFunding, setOtherFunding,
     setFeasibility, isAnalyzing, setIsAnalyzing,
   } = useOnboarding();
 
@@ -118,6 +119,13 @@ function OnboardingInner() {
 
   const handleAnalyze = useCallback(async () => {
     if (!business || !location || analyzeBusyRef.current) return;
+    // Defensive: never analyze without a capital figure — send the user back
+    // to the capital step instead of running the engine with ₹0.
+    if (capital <= 0) {
+      setCapitalError("Please enter a valid amount");
+      void transitionTo(4, "Going to capital...");
+      return;
+    }
     analyzeBusyRef.current = true;
     setAnalyzeError(false);
     setIsAnalyzing(true);
@@ -146,7 +154,7 @@ function OnboardingInner() {
       analyzeBusyRef.current = false;
       setAnalyzeError(true);
     }
-  }, [business, location, capital, radius, subCategory, placeStatus, rentMonthly, scaleChoice, navigate, setFeasibility, setIsAnalyzing]);
+  }, [business, location, capital, radius, subCategory, placeStatus, rentMonthly, scaleChoice, navigate, setFeasibility, setIsAnalyzing, transitionTo]);
 
   if (analyzeError) {
     return (
@@ -250,17 +258,22 @@ function OnboardingInner() {
               value={capital} business={business}
               subCategory={subCategory} placeStatus={placeStatus}
               rentMonthly={rentMonthly} scaleChoice={scaleChoice}
+              onScaleChange={setScaleChoice}
+              otherFunding={otherFunding}
+              onOtherFundingChange={setOtherFunding}
               onChange={(v) => { setCapital(v); setCapitalError(""); }} error={capitalError}
             />
           )}
           {step === 5 && (
             <ReviewStep location={location} radius={radius} business={business} capital={capital}
               subCategory={subCategory} placeStatus={placeStatus} rentMonthly={rentMonthly} scaleChoice={scaleChoice}
+              otherFunding={otherFunding}
               onEditLocation={() => transitionTo(0, "Going to location...")}
               onEditBusiness={() => transitionTo(1, "Going to business...")}
               onEditType={() => transitionTo(2, "Going to business type...")}
               onEditPlace={() => transitionTo(3, "Going to place...")}
               onEditCapital={() => transitionTo(4, "Going to capital...")}
+              onEditScale={() => transitionTo(4, "Going to capital...")}
             />
           )}
         </div>
@@ -273,7 +286,7 @@ function OnboardingInner() {
             className="inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
             <ArrowLeft className="h-4 w-4" /> Back
           </button>
-          {step < 3 ? (
+          {step < 5 ? (
             <button onClick={handleNext} disabled={!canProceed}
               className={cn("inline-flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-semibold transition-all",
                 canProceed ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm" : "bg-muted text-muted-foreground cursor-not-allowed",
@@ -1060,11 +1073,12 @@ function PlaceStep({ business, subCategory, status, onStatusChange, rentMonthly,
   );
 }
 
-/* ─── Step 4: Capital with dynamic financing preview ─── */
-function CapitalStep({ value, business, subCategory, placeStatus, rentMonthly, scaleChoice, onChange, error }: {
+/* ─── Step 4: Capital with scale choice + dynamic financing preview ─── */
+function CapitalStep({ value, business, subCategory, placeStatus, rentMonthly, scaleChoice, onScaleChange, otherFunding, onOtherFundingChange, onChange, error }: {
   value: number; business: BusinessCategory | null;
   subCategory: BusinessSubCategory | null; placeStatus: PlaceStatus;
-  rentMonthly: number; scaleChoice: ScaleChoice;
+  rentMonthly: number; scaleChoice: ScaleChoice; onScaleChange: (s: ScaleChoice) => void;
+  otherFunding: number; onOtherFundingChange: (v: number) => void;
   onChange: (v: number) => void; error: string;
 }) {
   const showPreview = value > 0;
@@ -1076,19 +1090,21 @@ function CapitalStep({ value, business, subCategory, placeStatus, rentMonthly, s
     const bid = business?.id ?? "other";
     const range = startupCostRange(bid);
     const options = { subCategoryId: subCategory?.id ?? null, placeStatus, rentMonthly, scaleChoice };
-    const pc = calculateProjectCost(value, bid, options);
+    const totalAvailable = value + Math.max(0, otherFunding || 0);
+    const pc = calculateProjectCost(totalAvailable, bid, options);
     const projectCost = pc.totalProjectCost;
-    const fundingGap = Math.max(0, projectCost - value);
-    const loan = calculateLoan(value, bid, options);
+    const fundingGap = Math.max(0, projectCost - totalAvailable);
+    const loan = calculateLoan(totalAvailable, bid, options);
     return {
       range,
       projectCost,
       fundingGap,
       financing: loan ? loan.loanAmount : 0,
       noFinancingNeeded: fundingGap <= 0,
+      totalAvailable,
       options,
     };
-  }, [value, business, subCategory, placeStatus, rentMonthly, scaleChoice, showPreview]);
+  }, [value, otherFunding, business, subCategory, placeStatus, rentMonthly, scaleChoice, showPreview]);
 
   return (
     <div className="animate-fade-in">
@@ -1120,6 +1136,42 @@ function CapitalStep({ value, business, subCategory, placeStatus, rentMonthly, s
         ))}
       </div>
 
+      {/* Other funding (family / partner / grants) — reduces the funding gap */}
+      <div className="mb-6 rounded-xl border border-border bg-white p-4">
+        <p className="text-sm font-semibold text-foreground mb-0.5">Other funding (optional)</p>
+        <p className="text-xs text-muted-foreground mb-3">
+          Family, partner or grant money you can add beyond your own savings. It directly reduces the funding gap.
+        </p>
+        <input
+          type="number"
+          min={0}
+          value={otherFunding || ""}
+          onChange={(e) => onOtherFundingChange(Math.max(0, Number(e.target.value) || 0))}
+          placeholder="e.g. 50000"
+          className="w-full sm:w-64 rounded-xl border border-border bg-white px-3.5 py-2.5 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+        />
+      </div>
+
+      {/* Starting scale — was previously shown in Review but never selectable */}
+      <div className="mb-6 rounded-xl border border-border bg-white p-4">
+        <p className="text-sm font-semibold text-foreground mb-0.5">Starting scale</p>
+        <p className="text-xs text-muted-foreground mb-3">
+          Smaller scale means lower investment and risk; larger means more capacity and revenue.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          {SCALE_OPTIONS.map((s) => (
+            <button key={s.value} onClick={() => onScaleChange(s.value)}
+              className={cn(
+                "rounded-xl border p-3 text-left transition-all",
+                scaleChoice === s.value ? "border-primary bg-primary/5" : "border-border bg-white hover:border-primary/40",
+              )}>
+              <p className="text-sm font-semibold">{s.label}</p>
+              <p className="text-[11px] text-muted-foreground">{s.hint}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {showPreview && estimate && (
         <div className="rounded-xl bg-[#F4F8EF] border border-border/60 p-4 animate-fade-in space-y-3">
           <p className="text-sm text-muted-foreground">
@@ -1137,8 +1189,11 @@ function CapitalStep({ value, business, subCategory, placeStatus, rentMonthly, s
           <div className="rounded-lg border border-border/60 bg-white divide-y divide-border/60 overflow-hidden text-sm">
             <PreviewRow label="Estimated setup requirement" value={formatIndianCurrency(estimate.projectCost)} note="business type + place + scale" />
             <PreviewRow label="Your contribution" value={formatIndianCurrency(value)} />
+            {(otherFunding || 0) > 0 && (
+              <PreviewRow label="Other funding (family/partner/grant)" value={`+ ${formatIndianCurrency(otherFunding)}`} />
+            )}
             {estimate.noFinancingNeeded ? (
-              <PreviewRow label="External financing needed" value="None estimated" note="your contribution covers this setup" highlight />
+              <PreviewRow label="External financing needed" value="None estimated" note="your total funding covers this setup" highlight />
             ) : (
               <PreviewRow
                 label="Estimated funding requirement"
@@ -1192,10 +1247,10 @@ function PreviewRow({ label, value, note, highlight }: {
 }
 
 /* ─── Step 5: Review ─── */
-function ReviewStep({ location, radius, business, capital, subCategory, placeStatus, rentMonthly, scaleChoice, onEditLocation, onEditBusiness, onEditType, onEditPlace, onEditCapital }: {
+function ReviewStep({ location, radius, business, capital, subCategory, placeStatus, rentMonthly, scaleChoice, otherFunding, onEditLocation, onEditBusiness, onEditType, onEditPlace, onEditCapital, onEditScale }: {
   location: Location | null; radius: number; business: BusinessCategory | null;
-  capital: number; subCategory: BusinessSubCategory | null; placeStatus: PlaceStatus; rentMonthly: number; scaleChoice: ScaleChoice;
-  onEditLocation: () => void; onEditBusiness: () => void; onEditType: () => void; onEditPlace: () => void; onEditCapital: () => void;
+  capital: number; subCategory: BusinessSubCategory | null; placeStatus: PlaceStatus; rentMonthly: number; scaleChoice: ScaleChoice; otherFunding: number;
+  onEditLocation: () => void; onEditBusiness: () => void; onEditType: () => void; onEditPlace: () => void; onEditCapital: () => void; onEditScale: () => void;
 }) {
   return (
     <div className="animate-fade-in">
@@ -1218,13 +1273,13 @@ function ReviewStep({ location, radius, business, capital, subCategory, placeSta
           sub={subCategory?.description} onEdit={onEditType} />
         <ReviewRow icon={<Building2 className="h-4 w-4" />} label="Place / Workspace"
           value={PLACE_LABELS[placeStatus]}
-          sub={placeStatus === "rent" && subCategory ? `Monthly rent: ${formatIndianCurrency(rentMonthly || 0)}` : undefined} onEdit={onEditPlace} />
+          sub={placeStatus === "rent" ? `Monthly rent: ${formatIndianCurrency(rentMonthly || 0)}` : undefined} onEdit={onEditPlace} />
         <ReviewRow icon={<TrendingUp className="h-4 w-4" />} label="Scale"
           value={SCALE_OPTIONS.find((s) => s.value === scaleChoice)?.label || "Recommended"}
-          sub={SCALE_OPTIONS.find((s) => s.value === scaleChoice)?.hint} onEdit={onEditType} />
+          sub={SCALE_OPTIONS.find((s) => s.value === scaleChoice)?.hint} onEdit={onEditScale} />
         <ReviewRow icon={<IndianRupee className="h-4 w-4" />} label="Your Contribution"
           value={capital > 0 ? formatIndianCurrency(capital) : "Not entered"}
-          sub="Amount you can contribute from savings" onEdit={onEditCapital} />
+          sub={otherFunding > 0 ? `+ ${formatIndianCurrency(otherFunding)} other funding (family/partner/grant)` : "Amount you can contribute from savings"} onEdit={onEditCapital} />
       </div>
     </div>
   );

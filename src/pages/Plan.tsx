@@ -27,7 +27,7 @@ import {
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ResponsiveContainer,
-  LineChart, Line, Legend, ReferenceLine,
+  LineChart, Line, Legend, ReferenceLine, Cell,
 } from "recharts";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -738,22 +738,42 @@ function StepCapital({ ob, plan, onNext, onBack }: {
         ))}
       </div>
 
-      {/* Capital vs project cost */}
+      {/* Capital + other funding vs project cost */}
       <div className="rounded-xl border border-border bg-white p-4">
-        <p className="text-sm font-bold mb-3">Your Capital vs Total Project Cost</p>
-        <div className="h-40">
+        <p className="text-sm font-bold mb-1">Your funding vs Total Project Cost</p>
+        <p className="text-xs text-muted-foreground mb-3">Your capital plus any other funding, compared against the estimated total cost.</p>
+        <div className="h-44">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
               data={[
-                { name: "Your Capital", value: plan.funding.totalAvailableFunding },
-                { name: "Project Cost", value: plan.cost.totalProjectCost },
+                ...(plan.funding.otherFunding > 0
+                  ? [{ name: "Other funding", value: plan.funding.otherFunding }]
+                  : []),
+                { name: "Your Capital", value: plan.funding.userCapital },
+                ...(plan.funding.fundingGap > 0
+                  ? [{ name: "Funding gap", value: plan.funding.fundingGap }]
+                  : []),
+                { name: "Total Project Cost", value: plan.cost.totalProjectCost },
               ]}
               layout="vertical"
             >
               <XAxis type="number" hide />
-              <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" />
+              <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" />
               <RTooltip formatter={(v: number) => formatIndianCurrency(v)} />
-              <Bar dataKey="value" fill="var(--primary)" radius={[0, 4, 4, 0]} barSize={28} />
+              <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={22}>
+                {([
+                  ...(plan.funding.otherFunding > 0
+                    ? [{ name: "Other funding", value: plan.funding.otherFunding, fill: "#8b5cf6" }]
+                    : []),
+                  { name: "Your Capital", value: plan.funding.userCapital, fill: "var(--primary)" },
+                  ...(plan.funding.fundingGap > 0
+                    ? [{ name: "Funding gap", value: plan.funding.fundingGap, fill: "#f59e0b" }]
+                    : []),
+                  { name: "Total Project Cost", value: plan.cost.totalProjectCost, fill: "#94a3b8" },
+                ]).map((entry) => (
+                  <Cell key={entry.name} fill={entry.fill} />
+                ))}
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -761,9 +781,14 @@ function StepCapital({ ob, plan, onNext, onBack }: {
           <span className="text-muted-foreground">Coverage</span>
           <span className="font-bold">
             {plan.cost.totalProjectCost > 0 ? Math.round((plan.funding.totalAvailableFunding / plan.cost.totalProjectCost) * 100) : 100}%
-            <span className="text-xs text-muted-foreground font-medium"> of estimated project cost</span>
+            <span className="text-xs text-muted-foreground font-medium"> of estimated project cost covered by your funding</span>
           </span>
         </div>
+        {plan.funding.fundingGap > 0 && (
+          <p className="mt-1 text-xs text-amber-700">
+            Funding gap of {formatIndianCurrency(plan.funding.fundingGap)} — you'll plan how to cover it on the next step.
+          </p>
+        )}
       </div>
 
       <div className="flex gap-3">
