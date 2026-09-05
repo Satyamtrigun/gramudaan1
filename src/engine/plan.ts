@@ -15,7 +15,8 @@
  * All figures are ESTIMATES for decision support, never guarantees.
  * ──────────────────────────────────────────────────────────────────────────── */
 
-import { buildCostBreakdown, type CostContext } from "./costModel";
+import { buildCostBreakdown, buildInvestmentTiers, type CostContext } from "./costModel";
+import { recommendScale, type ScaleRecommendation } from "./capitalAllocation";
 import { buildBusinessModel, type MonthProjection } from "./businessModel";
 import { calculateRepayment } from "./financial";
 import { formatIndianCurrency } from "@/data/assessment";
@@ -36,6 +37,8 @@ export interface PlanInput {
   otherFunding?: number;
   /** Local competition density from the market analysis, when available. */
   competitionDensity?: "low" | "medium" | "high";
+  /** User-edited cost-component amounts (₹) — honored by every consumer of the plan. */
+  overrides?: CostContext["overrides"];
 }
 
 /* ─── Outputs ─── */
@@ -45,7 +48,7 @@ export interface CostSplit {
   workingCapital: number;
   workingCapitalMonths: number; // buffer covered by the estimate
   totalProjectCost: number;
-  components: { id: string; label: string; labelHi: string; amount: number; source: string }[];
+  components: { id: string; label: string; labelHi: string; amount: number; source: string; priority: "essential" | "important" | "optional" }[];
   notes: string[];
 }
 
@@ -120,6 +123,10 @@ export interface RiskAssessment {
 
 export interface AdvisoryPlan {
   cost: CostSplit;
+  /** Reference investment levels: Small Start / Recommended / Expanded. */
+  tiers: { minimum: number; recommended: number; expanded: number };
+  /** Smallest tier the user's funding covers — never over-recommends. */
+  scaleRecommendation: ScaleRecommendation;
   funding: FundingSplit;
   loan: LoanTerms;
   emiStress: EmiStress;
@@ -164,11 +171,16 @@ export function buildAdvisoryPlan(input: PlanInput): AdvisoryPlan {
     placeStatus: input.placeStatus,
     rentMonthly: input.rentMonthly,
     scaleChoice: input.scaleChoice,
+    overrides: input.overrides,
   };
 
   const userCapital = safeNumber(input.userCapital);
   const otherFunding = safeNumber(input.otherFunding);
   const targetInvestment = safeNumber(input.targetInvestment);
+
+  /* ── Reference investment tiers + scale recommendation (user edits don't move them) ── */
+  const tiers = buildInvestmentTiers(input.businessId, ctx);
+  const scaleRecommendation = recommendScale(userCapital + otherFunding, tiers);
 
   /* ── Cost split: setup vs initial working capital (from the shared cost model) ── */
   const breakdown = buildCostBreakdown(input.businessId, ctx);
@@ -389,6 +401,8 @@ export function buildAdvisoryPlan(input: PlanInput): AdvisoryPlan {
 
   return {
     cost,
+    tiers,
+    scaleRecommendation,
     funding,
     loan,
     emiStress,

@@ -14,12 +14,25 @@ import {
   SCALE_FACTORS,
 } from "@/data/businessConfig";
 
+export type CostPriority = "essential" | "important" | "optional";
+
 export interface CostComponent {
   id: string;
   label: string;
   labelHi: string;
   amount: number;
   source: "CALCULATED" | "ESTIMATED" | "USER_PROVIDED";
+  /** Where this cost sits in the spending priority — drives capital allocation. */
+  priority: CostPriority;
+}
+
+export interface InvestmentTiers {
+  /** Small start — essential + important costs only, at small scale. */
+  minimum: number;
+  /** Typical setup — all components at recommended scale. */
+  recommended: number;
+  /** Larger capacity — all components at expanded scale. */
+  expanded: number;
 }
 
 export interface CostBreakdown {
@@ -42,6 +55,10 @@ export interface CostContext {
   placeStatus?: PlaceStatus;
   rentMonthly?: number;
   scaleChoice?: ScaleChoice;
+  /** User-edited component amounts (₹), keyed by component id. Override the estimate. */
+  overrides?: Partial<Record<string, number>>;
+  /** Internal: drop optional components (used for the minimum-start tier). */
+  dropOptional?: boolean;
 }
 
 type ComponentId = "land" | "construction" | "equipment" | "inventory" | "workingCapital" | "licensing" | "other";
@@ -76,6 +93,59 @@ const FIELD_BY_COMPONENT: Record<string, FieldKey> = {
   licensing: "licensingCost",
   other: "otherCost",
 };
+
+/* ─── Spending priority by component (business-aware) ───
+ * Default order for a typical rural micro-business:
+ *   1. Infrastructure / place  2. Essential equipment  3. Initial stock
+ *   4. Licensing  5. Minimum working capital  6. Marketing / expansion.
+ * Business families can fine-tune it (e.g. dairy: animals+feed before
+ * machinery; clothing: display/marketing matter more early on).
+ */
+
+const DEFAULT_PRIORITY: Record<ComponentId, CostPriority> = {
+  land: "essential",
+  construction: "essential",
+  equipment: "essential",
+  inventory: "essential",
+  workingCapital: "important",
+  licensing: "essential",
+  other: "optional",
+};
+
+const PRIORITY_OVERRIDES: Record<string, Partial<Record<ComponentId, CostPriority>>> = {
+  // Animals + feed (inventory) and shed come before machinery.
+  dairy: { equipment: "important" },
+  poultry: { equipment: "important" },
+  "poultry-feed": { equipment: "important" },
+  // Display/furniture (equipment) is secondary to stock in a clothing shop;
+  // marketing matters early for garments.
+  clothing: { equipment: "important", other: "important" },
+  // Services sell skills — stock is optional, marketing matters.
+  services: { inventory: "optional", other: "important" },
+  "mobile-repair": { inventory: "important" },
+  // Stock-focused retail: everything else supports the inventory.
+  grocery: {},
+  "agri-inputs": {},
+  // Manufacturing is machinery-heavy; raw material bought as needed.
+  "food-processing": { inventory: "important" },
+  manufacturing: { inventory: "important", other: "important" },
+  other: {},
+};
+
+function componentPriority(businessId: string, id: ComponentId): CostPriority {
+  const bizOverrides = PRIORITY_OVERRIDES[businessId] ?? {};
+  return bizOverrides[id] ?? DEFAULT_PRIORITY[id];
+}
+
+export function buildInvestmentTiers(businessId: string, ctx: CostContext = {}): InvestmentTiers {
+  // Tiers are reference points for planning — user edits never move them.
+  const base = { ...ctx, overrides: undefined };
+  return {
+    minimum: buildCostBreakdown(businessId, { ...base, scaleChoice: "small", dropOptional: true }).total,
+    recommended: buildCostBreakdown(businessId, { ...base, scaleChoice: "recommended" }).total,
+    expanded: buildCostBreakdown(businessId, { ...base, scaleChoice: "expanded" }).total,
+  };
+}
 
 export function buildCostBreakdown(businessId: string, ctx: CostContext = {}): CostBreakdown {
   const { min, max } = startupCostRange(businessId);
@@ -134,6 +204,29 @@ export function buildCostBreakdown(businessId: string, ctx: CostContext = {}): C
     notes.push("Place status not decided — a typical arrangement is assumed. Update it in your profile to refine costs.");
   }
 
+  // Minimum-start tier: drop the optional components (marketing, extras).
+  if (ctx.dropOptional) {
+    for (const m of COMPONENT_META) {
+      if (componentPriority(businessId, m.id) === "optional") amounts[m.id] = 0;
+    }
+  }
+
+  // User edits win over the model — the source of truth still recomputes
+  // everything downstream from these numbers (plan, dashboard, report).
+  let adjustedAny = false;
+  if (ctx.overrides) {
+    for (const m of COMPONENT_META) {
+      const v = ctx.overrides[m.id];
+      if (typeof v === "number" && Number.isFinite(v) && v >= 0) {
+        amounts[m.id] = Math.round(v);
+        adjustedAny = true;
+      }
+    }
+  }
+  if (adjustedAny) {
+    notes.push("You adjusted individual cost estimates — the total now reflects your own numbers.");
+  }
+
   // Monthly rent estimate (used by the operating model when renting)
   const [rentLow, rentHigh] = RENT_BY_PLACE[placeType] ?? RENT_BY_PLACE.shop;
   const rentGuess = rentHigh > 0 ? Math.round((rentLow + rentHigh) / 2) : 0;
@@ -145,6 +238,7 @@ export function buildCostBreakdown(businessId: string, ctx: CostContext = {}): C
     labelHi: m.labelHi,
     amount: amounts[m.id] ?? 0,
     source: m.id === "licensing" || m.id === "other" ? "ESTIMATED" : "CALCULATED",
+    priority: componentPriority(businessId, m.id),
   }));
 
   const total = components.reduce((sum, c) => sum + c.amount, 0);

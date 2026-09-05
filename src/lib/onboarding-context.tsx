@@ -31,6 +31,10 @@ interface OnboardingState {
   targetInvestment: number;
   /** Family / partner / grant / other legitimate funding (combined ₹). */
   otherFunding: number;
+  /** User-edited cost-component amounts (₹), keyed by component id.
+   *  Empty = use the model estimates. Honored by the whole decision chain
+   *  (onboarding → plan → dashboard → report → advisor). */
+  costOverrides: Record<string, number>;
   feasibility: FeasibilityData | null;
   isAnalyzing: boolean;
 }
@@ -47,6 +51,8 @@ interface OnboardingContextType extends OnboardingState {
   setCapital: (c: number) => void;
   setTargetInvestment: (v: number) => void;
   setOtherFunding: (v: number) => void;
+  setCostOverride: (id: string, value: number) => void;
+  resetCostOverrides: () => void;
   setFeasibility: (f: FeasibilityData | null) => void;
   setIsAnalyzing: (a: boolean) => void;
   reset: () => void;
@@ -65,6 +71,7 @@ const defaultState: OnboardingState = {
   capital: 0,
   targetInvestment: 0,
   otherFunding: 0,
+  costOverrides: {},
   feasibility: null,
   isAnalyzing: false,
 };
@@ -96,6 +103,16 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     setState((s) => ({ ...s, targetInvestment }));
   const setOtherFunding = (otherFunding: number) =>
     setState((s) => ({ ...s, otherFunding }));
+  const setCostOverride = (id: string, value: number) =>
+    setState((s) => ({
+      ...s,
+      costOverrides: {
+        ...s.costOverrides,
+        [id]: Math.max(0, Number.isFinite(value) ? Math.round(value) : 0),
+      },
+    }));
+  const resetCostOverrides = () =>
+    setState((s) => ({ ...s, costOverrides: {} }));
   const setFeasibility = (feasibility: FeasibilityData | null) =>
     setState((s) => ({ ...s, feasibility }));
   const setIsAnalyzing = (isAnalyzing: boolean) =>
@@ -130,6 +147,8 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
         setCapital,
         setTargetInvestment,
         setOtherFunding,
+        setCostOverride,
+        resetCostOverrides,
         setFeasibility,
         setIsAnalyzing,
         reset,
@@ -154,6 +173,8 @@ const defaultContextValue: OnboardingContextType = {
   setCapital: () => {},
   setTargetInvestment: () => {},
   setOtherFunding: () => {},
+  setCostOverride: () => {},
+  resetCostOverrides: () => {},
   setFeasibility: () => {},
   setIsAnalyzing: () => {},
   reset: () => {},

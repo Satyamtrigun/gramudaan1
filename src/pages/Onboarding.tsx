@@ -4,7 +4,8 @@ import { ProgressStepper } from "@/components/ui/ProgressStepper";
 import { CurrencyInput } from "@/components/ui/CurrencyInput";
 import { useOnboarding } from "@/lib/onboarding-context";
 import { generateFeasibility } from "@/data/feasibility";
-import { calculateProjectCost, calculateLoan, startupCostRange } from "@/engine/financial";
+import { buildCostBreakdown, buildInvestmentTiers, type CostBreakdown, type CostPriority } from "@/engine/costModel";
+import { allocateCapital, capitalFitResult, recommendScale, suggestSurplusUse } from "@/engine/capitalAllocation";
 import type { Location } from "@/data/locations";
 import { businessCategories, type BusinessCategory } from "@/data/businesses";
 import { formatIndianCurrency } from "@/data/assessment";
@@ -27,6 +28,7 @@ import {
   CheckCircle2, ArrowLeft, ArrowRight, Edit3, Check,
   TrendingUp, X, Loader2, Sparkles, Navigation, Database, AlertCircle, RotateCcw,
   Home, Building2, Hammer, Warehouse, KeyRound, HelpCircle, SlidersHorizontal, ChevronDown,
+  Wallet, ShieldCheck, BarChart3, ListChecks,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -39,6 +41,7 @@ const STEPS = [
   { id: 5, label: "Review" },
 ];
 
+// Quick-pick contribution chips shown on the Capital step.
 const QUICK_AMOUNTS = [
   { label: "₹50K", value: 50000 },
   { label: "₹1L", value: 100000 },
@@ -60,6 +63,7 @@ function OnboardingInner() {
     rentMonthly, setRentMonthly, scaleChoice, setScaleChoice,
     businessAnswers, setBusinessAnswer,
     otherFunding, setOtherFunding,
+    costOverrides, setCostOverride, resetCostOverrides,
     setFeasibility, isAnalyzing, setIsAnalyzing,
   } = useOnboarding();
 
@@ -117,6 +121,17 @@ function OnboardingInner() {
     if (step > 0) transitionTo(step - 1, "Going back...");
   }, [step, transitionTo]);
 
+  // Switching business / business-type clears cost overrides — edits belong
+  // to the previous breakdown and must not silently apply to a new one.
+  const chooseBusiness = useCallback((b: BusinessCategory | null) => {
+    resetCostOverrides();
+    setBusiness(b);
+  }, [setBusiness, resetCostOverrides]);
+  const chooseSubCategory = useCallback((s: BusinessSubCategory | null) => {
+    resetCostOverrides();
+    setSubCategory(s);
+  }, [setSubCategory, resetCostOverrides]);
+
   const handleAnalyze = useCallback(async () => {
     if (!business || !location || analyzeBusyRef.current) return;
     // Defensive: never analyze without a capital figure — send the user back
@@ -136,6 +151,7 @@ function OnboardingInner() {
         placeStatus,
         rentMonthly,
         scaleChoice,
+        overrides: costOverrides,
       });
       // The calculation itself is fast — hold the polished branded loader
       // for a short minimum so there is no abrupt flash into the dashboard.
@@ -230,7 +246,7 @@ function OnboardingInner() {
           {step === 1 && (
             <BusinessStep
               search={businessSearch} onSearchChange={setBusinessSearch}
-              businesses={filteredBusinesses} selected={business} onSelect={setBusiness}
+              businesses={filteredBusinesses} selected={business} onSelect={chooseBusiness}
               location={location}
             />
           )}
@@ -238,7 +254,7 @@ function OnboardingInner() {
             <SubCategoryStep
               business={business}
               selected={subCategory}
-              onSelect={setSubCategory}
+              onSelect={chooseSubCategory}
               answers={businessAnswers}
               onAnswer={setBusinessAnswer}
             />
@@ -261,6 +277,9 @@ function OnboardingInner() {
               onScaleChange={setScaleChoice}
               otherFunding={otherFunding}
               onOtherFundingChange={setOtherFunding}
+              costOverrides={costOverrides}
+              onCostOverride={setCostOverride}
+              onResetCostOverrides={resetCostOverrides}
               onChange={(v) => { setCapital(v); setCapitalError(""); }} error={capitalError}
             />
           )}
@@ -1074,37 +1093,85 @@ function PlaceStep({ business, subCategory, status, onStatusChange, rentMonthly,
 }
 
 /* ─── Step 4: Capital with scale choice + dynamic financing preview ─── */
-function CapitalStep({ value, business, subCategory, placeStatus, rentMonthly, scaleChoice, onScaleChange, otherFunding, onOtherFundingChange, onChange, error }: {
+const PRIORITY_BADGE: Record<CostPriority, string> = {
+  essential: "bg-emerald-100 text-emerald-700",
+  important: "bg-amber-100 text-amber-700",
+  optional: "bg-zinc-100 text-zinc-600",
+};
+
+const PRIORITY_BAR: Record<CostPriority, string> = {
+  essential: "bg-emerald-500",
+  important: "bg-amber-400",
+  optional: "bg-zinc-300",
+};
+
+const TIER_CARDS: { value: ScaleChoice; tierKey: "minimum" | "recommended" | "expanded"; label: string; hint: string }[] = [
+  { value: "small", tierKey: "minimum", label: "Minimum Start", hint: "Essential setup only — lowest investment & risk" },
+  { value: "recommended", tierKey: "recommended", label: "Recommended Setup", hint: "Balanced setup for sustainable operations" },
+  { value: "expanded", tierKey: "expanded", label: "Expanded Setup", hint: "Higher inventory, capacity & marketing" },
+];
+
+function CapitalStep({ value, business, subCategory, placeStatus, rentMonthly, scaleChoice, onScaleChange, otherFunding, onOtherFundingChange, costOverrides, onCostOverride, onResetCostOverrides, onChange, error }: {
   value: number; business: BusinessCategory | null;
   subCategory: BusinessSubCategory | null; placeStatus: PlaceStatus;
   rentMonthly: number; scaleChoice: ScaleChoice; onScaleChange: (s: ScaleChoice) => void;
   otherFunding: number; onOtherFundingChange: (v: number) => void;
+  costOverrides: Record<string, number>;
+  onCostOverride: (id: string, v: number) => void; onResetCostOverrides: () => void;
   onChange: (v: number) => void; error: string;
 }) {
-  const showPreview = value > 0;
+  const showAnalysis = value > 0;
+  const [editing, setEditing] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
 
-  // Business-context aware estimate from the shared financial engine — no
-  // universal multiplier. Same model the feasibility dashboard later uses.
-  const estimate = useMemo(() => {
-    if (!showPreview) return null;
-    const bid = business?.id ?? "other";
-    const range = startupCostRange(bid);
-    const options = { subCategoryId: subCategory?.id ?? null, placeStatus, rentMonthly, scaleChoice };
-    const totalAvailable = value + Math.max(0, otherFunding || 0);
-    const pc = calculateProjectCost(totalAvailable, bid, options);
-    const projectCost = pc.totalProjectCost;
-    const fundingGap = Math.max(0, projectCost - totalAvailable);
-    const loan = calculateLoan(totalAvailable, bid, options);
-    return {
-      range,
-      projectCost,
-      fundingGap,
-      financing: loan ? loan.loanAmount : 0,
-      noFinancingNeeded: fundingGap <= 0,
-      totalAvailable,
-      options,
-    };
-  }, [value, otherFunding, business, subCategory, placeStatus, rentMonthly, scaleChoice, showPreview]);
+  const bid = business?.id ?? "other";
+
+  // Reference investment levels for this business — user edits never move them.
+  const tiers = useMemo(
+    () => buildInvestmentTiers(bid, { subCategoryId: subCategory?.id ?? null, placeStatus, rentMonthly }),
+    [bid, subCategory, placeStatus, rentMonthly],
+  );
+
+  // Active setup estimate at the chosen scale — user edits win. This is the
+  // SAME breakdown the plan, dashboard and report read, so one change here
+  // recalculates everything downstream (gap, loan, EMI, risk, feasibility).
+  const breakdown = useMemo(
+    () => buildCostBreakdown(bid, {
+      subCategoryId: subCategory?.id ?? null,
+      placeStatus,
+      rentMonthly,
+      scaleChoice,
+      overrides: costOverrides,
+    }),
+    [bid, subCategory, placeStatus, rentMonthly, scaleChoice, costOverrides],
+  );
+
+  const totalRequired = breakdown.total;
+  const totalAvailable = value + Math.max(0, otherFunding || 0);
+  const fundingGap = Math.max(0, totalRequired - totalAvailable);
+  const remainingCapital = Math.max(0, totalAvailable - totalRequired);
+  const hasOverrides = Object.keys(costOverrides).length > 0;
+
+  // How the user's own capital gets deployed — priority-ordered, not equal split.
+  const allocation = useMemo(() => allocateCapital(value, breakdown.components), [value, breakdown]);
+  const fit = capitalFitResult(totalAvailable, totalRequired);
+  const rec = recommendScale(totalAvailable, tiers);
+  const surplus = Math.max(0, totalAvailable - tiers.minimum);
+  const surplusUses = useMemo(() => suggestSurplusUse(surplus, bid), [surplus, bid]);
+
+  const visibleComponents = breakdown.components.filter((c) => c.amount > 0);
+  const essentialComps = visibleComponents.filter((c) => c.priority === "essential");
+  const importantComps = visibleComponents.filter((c) => c.priority === "important");
+  const optionalComps = visibleComponents.filter((c) => c.priority === "optional");
+
+  const startEdit = (id: string, amount: number) => {
+    setEditing(id);
+    setEditDraft(String(amount));
+  };
+  const saveEdit = () => {
+    if (editing) onCostOverride(editing, Math.max(0, Number(editDraft) || 0));
+    setEditing(null);
+  };
 
   return (
     <div className="animate-fade-in">
@@ -1112,9 +1179,9 @@ function CapitalStep({ value, business, subCategory, placeStatus, rentMonthly, s
         <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary mb-3">
           <IndianRupee className="h-6 w-6" />
         </div>
-        <h2 className="text-2xl sm:text-3xl font-bold">How much can you contribute?</h2>
+        <h2 className="text-2xl sm:text-3xl font-bold">How much can you invest?</h2>
         <p className="mt-2 text-sm text-muted-foreground max-w-md mx-auto">
-          This is the amount you can invest from your own savings. We'll use it to estimate financing options and financial feasibility.
+          Tell us what you can put in from your own pocket. We'll show exactly what your business needs, where the money will go, and how much funding is actually required.
         </p>
       </div>
 
@@ -1152,79 +1219,280 @@ function CapitalStep({ value, business, subCategory, placeStatus, rentMonthly, s
         />
       </div>
 
-      {/* Starting scale — was previously shown in Review but never selectable */}
-      <div className="mb-6 rounded-xl border border-border bg-white p-4">
-        <p className="text-sm font-semibold text-foreground mb-0.5">Starting scale</p>
-        <p className="text-xs text-muted-foreground mb-3">
-          Smaller scale means lower investment and risk; larger means more capacity and revenue.
-        </p>
+      {/* THREE LEVELS OF INVESTMENT — Small Start / Recommended / Expanded */}
+      <div className="mb-6">
+        <div className="flex items-start gap-2.5 mb-3">
+          <div className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <Wallet className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-foreground leading-tight">Your business investment</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Three reference levels for {business ? `${business.name}${subCategory ? ` — ${subCategory.name}` : ""}` : "your business"}. Tap one to set your starting scale.
+            </p>
+          </div>
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-          {SCALE_OPTIONS.map((s) => (
-            <button key={s.value} onClick={() => onScaleChange(s.value)}
+          {TIER_CARDS.map((t) => (
+            <button key={t.value} onClick={() => onScaleChange(t.value)}
               className={cn(
-                "rounded-xl border p-3 text-left transition-all",
-                scaleChoice === s.value ? "border-primary bg-primary/5" : "border-border bg-white hover:border-primary/40",
+                "rounded-xl border p-3.5 text-left transition-all",
+                scaleChoice === t.value
+                  ? "border-primary bg-primary/5 shadow-sm"
+                  : "border-border bg-white hover:border-primary/40",
               )}>
-              <p className="text-sm font-semibold">{s.label}</p>
-              <p className="text-[11px] text-muted-foreground">{s.hint}</p>
+              <p className="text-sm font-semibold">{t.label}</p>
+              <p className="text-lg font-bold text-foreground mt-1">{formatIndianCurrency(tiers[t.tierKey])}</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">{t.hint}</p>
             </button>
           ))}
         </div>
-      </div>
-
-      {showPreview && estimate && (
-        <div className="rounded-xl bg-[#F4F8EF] border border-border/60 p-4 animate-fade-in space-y-3">
-          <p className="text-sm text-muted-foreground">
-            💡 {business ? (
-              <>
-                For <span className="font-semibold text-foreground">{business.icon} {business.name}</span>
-                {subCategory ? <> — <span className="font-semibold text-foreground">{subCategory.name}</span></> : null}, with a <span className="font-semibold text-foreground">{PLACE_LABELS[placeStatus]}</span> arrangement, the estimated setup requirement is{" "}
-                <span className="font-semibold text-foreground">{formatIndianCurrency(estimate.projectCost)}</span> at the <span className="font-semibold text-foreground">{SCALE_OPTIONS.find((s) => s.value === scaleChoice)?.label}</span>.
-              </>
-            ) : (
-              "Based on a typical small-business setup:"
-            )}
-          </p>
-
-          <div className="rounded-lg border border-border/60 bg-white divide-y divide-border/60 overflow-hidden text-sm">
-            <PreviewRow label="Estimated setup requirement" value={formatIndianCurrency(estimate.projectCost)} note="business type + place + scale" />
-            <PreviewRow label="Your contribution" value={formatIndianCurrency(value)} />
-            {(otherFunding || 0) > 0 && (
-              <PreviewRow label="Other funding (family/partner/grant)" value={`+ ${formatIndianCurrency(otherFunding)}`} />
-            )}
-            {estimate.noFinancingNeeded ? (
-              <PreviewRow label="External financing needed" value="None estimated" note="your total funding covers this setup" highlight />
-            ) : (
-              <PreviewRow
-                label="Estimated funding requirement"
-                value={formatIndianCurrency(estimate.fundingGap)}
-                note={`potential financing up to ${formatIndianCurrency(estimate.financing)}, subject to scheme terms`}
-                highlight
-              />
+        {showAnalysis && (
+          <div className="mt-3 rounded-lg border border-primary/30 bg-primary/5 px-3.5 py-2.5 text-xs">
+            <span className="font-bold text-foreground">Recommended for you: {rec.label}.</span>{" "}
+            <span className="text-muted-foreground">{rec.reason}</span>
+            {rec.scale !== scaleChoice && (
+              <span className="block mt-1 font-semibold text-primary">Tip: switch your starting scale to {rec.label} to match your funding.</span>
             )}
           </div>
+        )}
+      </div>
 
-          <details className="rounded-lg border border-border/60 bg-white/70 px-3 py-2 text-xs">
-            <summary className="cursor-pointer select-none font-semibold text-primary">
-              How did GramUdaan estimate this?
-            </summary>
-            <ul className="mt-2 space-y-1 text-muted-foreground list-none">
-              <li>• The selected business type ({business?.name}{subCategory ? ` — ${subCategory.name}` : ""}) and its typical setup requirements</li>
-              <li>• Your place arrangement: {PLACE_LABELS[placeStatus]}{placeStatus === "rent" && rentMonthly > 0 ? ` (₹${rentMonthly.toLocaleString("en-IN")}/month rent)` : ""} — owned place means no purchase cost</li>
-              <li>• The chosen scale: {SCALE_OPTIONS.find((s) => s.value === scaleChoice)?.label}</li>
-              <li>• Your available contribution against that setup</li>
-            </ul>
-            <p className="mt-2 text-[11px] text-muted-foreground/80">
-              These are preliminary estimates for decision support. Actual costs and financing depend on local prices, business scale, lender requirements and applicable schemes.
+      {showAnalysis ? (
+        <div className="space-y-6">
+          {/* 1. COST BREAKDOWN — where the money will go */}
+          <div className="rounded-xl border border-border bg-white overflow-hidden">
+            <div className="px-4 pt-4 pb-2">
+              <SectionTitle
+                icon={<BarChart3 className="h-4 w-4" />}
+                title="Where the money will go"
+                subtitle="Estimated setup cost breakdown for this business — edit any line and everything recalculates."
+              />
+            </div>
+            <div className="divide-y divide-border/60 text-sm">
+              {breakdown.components.map((c) => {
+                if (c.amount <= 0 && editing !== c.id) return null;
+                const isEditing = editing === c.id;
+                const overridden = costOverrides[c.id] !== undefined;
+                return (
+                  <div key={c.id} className="px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-foreground flex flex-wrap items-center gap-2">
+                          {c.label}
+                          <PriorityBadge priority={c.priority} />
+                        </p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">{c.labelHi}</p>
+                      </div>
+                      <div className="flex-shrink-0 text-right">
+                        {isEditing ? (
+                          <div className="flex items-center gap-2">
+                            <span className="text-muted-foreground">₹</span>
+                            <input
+                              type="number"
+                              min={0}
+                              autoFocus
+                              value={editDraft}
+                              onChange={(e) => setEditDraft(e.target.value)}
+                              onKeyDown={(e) => { if (e.key === "Enter") saveEdit(); if (e.key === "Escape") setEditing(null); }}
+                              className="w-28 rounded-lg border border-border px-2.5 py-1.5 text-sm text-right focus:border-primary focus:outline-none"
+                            />
+                            <button onClick={saveEdit} className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors" aria-label="Save">
+                              <Check className="h-3.5 w-3.5" />
+                            </button>
+                            <button onClick={() => setEditing(null)} className="flex h-7 w-7 items-center justify-center rounded-full bg-zinc-100 text-zinc-600 hover:bg-zinc-200 transition-colors" aria-label="Cancel">
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-end gap-2">
+                            <div>
+                              <p className="font-bold">{formatIndianCurrency(c.amount)}</p>
+                              <SourceTag source={overridden ? "YOUR ADJUSTMENT" : c.source} />
+                            </div>
+                            <button onClick={() => startEdit(c.id, c.amount)}
+                              className="flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-[11px] font-semibold text-muted-foreground hover:border-primary/40 hover:text-foreground transition-colors">
+                              <Edit3 className="h-3 w-3" /> Edit
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              <div className="px-4 py-3 bg-[#F4F8EF] flex items-center justify-between gap-3">
+                <p className="text-sm font-bold">Total estimated setup</p>
+                <p className="text-lg font-extrabold text-foreground">{formatIndianCurrency(totalRequired)}</p>
+              </div>
+            </div>
+            <div className="border-t border-border/60 px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[11px] text-muted-foreground">Your edits adjust the total, the funding gap and every downstream calculation.</p>
+              {hasOverrides && (
+                <button onClick={onResetCostOverrides} className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary hover:underline">
+                  <RotateCcw className="h-3 w-3" /> Reset to estimates
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* 2. HOW YOUR CAPITAL IS ALLOCATED */}
+          <div className="rounded-xl border border-border bg-white p-4">
+            <SectionTitle
+              icon={<Wallet className="h-4 w-4" />}
+              title={`How your ${formatIndianCurrency(value)} can be used`}
+              subtitle="Filled in priority order — essential costs first, then working capital, then optional extras."
+            />
+            <div className="mt-3 divide-y divide-border/60 text-sm">
+              {allocation.rows.filter((r) => r.allocated > 0).map((r) => (
+                <div key={r.id} className="flex items-center justify-between gap-3 py-2.5">
+                  <span className="flex items-center gap-2 text-muted-foreground">
+                    {r.label}
+                    <PriorityBadge priority={r.priority} />
+                  </span>
+                  <span className="text-right font-semibold">
+                    {formatIndianCurrency(r.allocated)}
+                    <span className="block text-[10px] text-muted-foreground">{Math.round(r.pctOfCapital * 100)}% of your capital</span>
+                  </span>
+                </div>
+              ))}
+              {allocation.remaining > 0 && (
+                <div className="flex items-center justify-between gap-3 py-2.5">
+                  <span className="text-muted-foreground">Kept unspent (buffer)</span>
+                  <span className="text-right font-semibold text-emerald-600">{formatIndianCurrency(allocation.remaining)}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between gap-3 py-2.5">
+                <span className="font-bold">Your contribution</span>
+                <span className="font-extrabold">{formatIndianCurrency(value)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 3. REAL FUNDING GAP */}
+          <FundingGapCard totalRequired={totalRequired} value={value} otherFunding={otherFunding} fundingGap={fundingGap} remainingCapital={remainingCapital} />
+
+          {/* 4. CAPITAL FIT */}
+          <div className={cn("rounded-xl border p-4",
+            fit.level === "sufficient" ? "border-emerald-200 bg-emerald-50/60" :
+            fit.level === "partial" ? "border-amber-200 bg-amber-50/60" :
+            "border-red-200 bg-red-50/60",
+          )}>
+            <p className="flex items-center gap-2 text-sm font-bold">
+              <ShieldCheck className={cn("h-4 w-4",
+                fit.level === "sufficient" ? "text-emerald-600" :
+                fit.level === "partial" ? "text-amber-600" : "text-red-600",
+              )} />
+              Capital fit: {fit.icon} {fit.label} — covers {fit.coveragePct}% of the setup
             </p>
-          </details>
-        </div>
-      )}
+            <p className="mt-1.5 text-xs text-muted-foreground">{fit.explanation}</p>
+          </div>
 
-      {!showPreview && (
+          {/* 5. MUST-SPEND vs CAN-OPTIMIZE vs DEFER */}
+          <div className="rounded-xl border border-border bg-white p-4">
+            <SectionTitle
+              icon={<ListChecks className="h-4 w-4" />}
+              title="Must spend, can optimize, defer"
+              subtitle="What truly needs to be in place on day one, vs what can wait until the business grows."
+            />
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <PriorityGroup title="MUST HAVE" tone="emerald" note="Required to start" items={essentialComps.map((c) => c.label)} />
+              <PriorityGroup title="CAN OPTIMIZE" tone="amber" note="Strongly recommended — trim if needed" items={importantComps.map((c) => c.label)} />
+              <PriorityGroup title="DEFER UNTIL GROWTH" tone="zinc" note="Add later when revenue supports it" items={optionalComps.map((c) => c.label)} />
+            </div>
+          </div>
+
+          {/* 6. WHAT IF YOU HAVE MORE MONEY */}
+          {surplus > 0 && (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
+              <p className="text-sm font-bold text-emerald-800">
+                You have {formatIndianCurrency(surplus)} more than the minimum start ({formatIndianCurrency(tiers.minimum)})
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                You don't have to spend it all. A sensible way to use the extra money:
+              </p>
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {surplusUses.map((u) => (
+                  <div key={u.id} className="flex items-center justify-between gap-2 rounded-lg border border-emerald-100 bg-white px-3 py-2">
+                    <span className="text-xs font-semibold">
+                      {u.label}
+                      <span className="block text-[10px] font-normal text-muted-foreground">{u.hint}</span>
+                    </span>
+                    <span className="font-bold text-emerald-700">{formatIndianCurrency(u.amount)}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-2 text-[11px] text-emerald-700/70">Suggested split — you decide. Keeping an emergency buffer is always recommended.</p>
+            </div>
+          )}
+
+          {/* 7. VISUAL CHARTS */}
+          <div className="rounded-xl border border-border bg-white p-4">
+            <SectionTitle
+              icon={<BarChart3 className="h-4 w-4" />}
+              title="Where your money goes"
+              subtitle="Share of the estimated setup requirement by cost line."
+            />
+            <div className="mt-4 space-y-2.5">
+              {visibleComponents.map((c) => (
+                <div key={c.id}>
+                  <div className="mb-1 flex items-center justify-between text-xs">
+                    <span className="font-medium text-muted-foreground">{c.label}</span>
+                    <span className="font-semibold">{formatIndianCurrency(c.amount)} · {totalRequired > 0 ? Math.round((c.amount / totalRequired) * 100) : 0}%</span>
+                  </div>
+                  <div className="h-2.5 overflow-hidden rounded-full bg-muted">
+                    <div className={cn("h-full rounded-full transition-all", PRIORITY_BAR[c.priority])}
+                      style={{ width: `${totalRequired > 0 ? Math.min(100, (c.amount / totalRequired) * 100) : 0}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-5 border-t border-border/60 pt-4">
+              <p className="mb-2 text-xs font-bold">Your funding vs total required</p>
+              <div className="flex items-center gap-2 text-[11px]">
+                <span className="w-24 flex-shrink-0 text-muted-foreground">Your funding</span>
+                <div className="h-3.5 flex-1 overflow-hidden rounded-full bg-muted">
+                  <div className="h-full rounded-full bg-emerald-500"
+                    style={{ width: `${totalRequired > 0 ? Math.min(100, (totalAvailable / totalRequired) * 100) : 0}%` }} />
+                </div>
+                <span className="w-24 flex-shrink-0 text-right font-semibold">{formatIndianCurrency(totalAvailable)}</span>
+              </div>
+              <div className="mt-2 flex items-center gap-2 text-[11px]">
+                <span className="w-24 flex-shrink-0 text-muted-foreground">Setup needs</span>
+                <div className="flex h-3.5 flex-1 overflow-hidden rounded-full bg-muted">
+                  {value > 0 && <div className="h-full bg-emerald-500" style={{ width: `${totalRequired > 0 ? (value / totalRequired) * 100 : 0}%` }} />}
+                  {(otherFunding || 0) > 0 && <div className="h-full bg-sky-500" style={{ width: `${totalRequired > 0 ? ((otherFunding || 0) / totalRequired) * 100 : 0}%` }} />}
+                  {fundingGap > 0 && <div className="h-full bg-red-500" style={{ width: `${totalRequired > 0 ? (fundingGap / totalRequired) * 100 : 0}%` }} />}
+                </div>
+                <span className="w-24 flex-shrink-0 text-right font-semibold">{formatIndianCurrency(totalRequired)}</span>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-muted-foreground">
+                {value > 0 && (
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" /> Your capital {formatIndianCurrency(value)}
+                  </span>
+                )}
+                {(otherFunding || 0) > 0 && (
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block h-2 w-2 rounded-full bg-sky-500" /> Other funding {formatIndianCurrency(otherFunding)}
+                  </span>
+                )}
+                {fundingGap > 0 && (
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block h-2 w-2 rounded-full bg-red-500" /> Funding gap {formatIndianCurrency(fundingGap)}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* 8. HOW DID GRAMUDAAN ESTIMATE THIS? */}
+          <EstimateDetails business={business} subCategory={subCategory} placeStatus={placeStatus} rentMonthly={rentMonthly} scaleChoice={scaleChoice} breakdown={breakdown} costOverrides={costOverrides} />
+        </div>
+      ) : (
         <div className="rounded-xl bg-muted/50 border border-border/60 p-4 text-center">
           <p className="text-sm text-muted-foreground">
-            💡 Don't worry about the exact amount. You can always adjust this later. We'll show you loan options based on your contribution.
+            💡 Don't worry about the exact amount. Enter your capital and we'll show exactly where it goes, how much funding is needed and which scale fits your situation.
           </p>
         </div>
       )}
@@ -1232,17 +1500,160 @@ function CapitalStep({ value, business, subCategory, placeStatus, rentMonthly, s
   );
 }
 
-function PreviewRow({ label, value, note, highlight }: {
-  label: string; value: string; note?: string; highlight?: boolean;
+function PriorityBadge({ priority }: { priority: CostPriority }) {
+  return (
+    <span className={cn("rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide", PRIORITY_BADGE[priority])}>
+      {priority}
+    </span>
+  );
+}
+
+function SourceTag({ source }: { source: string }) {
+  const styles: Record<string, string> = {
+    CALCULATED: "bg-emerald-50 text-emerald-700",
+    ESTIMATED: "bg-amber-50 text-amber-700",
+    USER_PROVIDED: "bg-sky-50 text-sky-700",
+    "YOUR ADJUSTMENT": "bg-violet-50 text-violet-700",
+  };
+  const label =
+    source === "YOUR ADJUSTMENT" ? "You set this" :
+    source === "USER_PROVIDED" ? "You provided" :
+    source === "CALCULATED" ? "Calculated" : "Estimated";
+  return (
+    <span className={cn("rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide", styles[source] ?? styles.ESTIMATED)}>
+      {label}
+    </span>
+  );
+}
+
+function SectionTitle({ icon, title, subtitle }: { icon: React.ReactNode; title: string; subtitle?: string }) {
+  return (
+    <div className="flex items-start gap-2.5">
+      <div className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">{icon}</div>
+      <div className="min-w-0">
+        <p className="text-sm font-bold text-foreground leading-tight">{title}</p>
+        {subtitle && <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p>}
+      </div>
+    </div>
+  );
+}
+
+function FundingGapCard({ totalRequired, value, otherFunding, fundingGap, remainingCapital }: {
+  totalRequired: number; value: number; otherFunding: number; fundingGap: number; remainingCapital: number;
+}) {
+  if (fundingGap <= 0) {
+    return (
+      <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
+        <p className="text-sm font-bold text-emerald-800">✅ No funding gap</p>
+        <p className="mt-1.5 text-xs text-muted-foreground">
+          Your funding ({formatIndianCurrency(value + Math.max(0, otherFunding))}) covers the estimated setup requirement ({formatIndianCurrency(totalRequired)}).
+          {remainingCapital > 0 && <> You have <span className="font-bold text-emerald-700">{formatIndianCurrency(remainingCapital)}</span> left over — keep it as an emergency buffer or use it for working capital.</>}{" "}
+          No loan is recommended under current assumptions.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+      <p className="text-sm font-bold text-amber-800">💰 Funding gap: {formatIndianCurrency(fundingGap)}</p>
+      <div className="mt-2 divide-y divide-border/60 rounded-lg border border-amber-100 bg-white text-xs">
+        <div className="flex items-center justify-between px-3 py-2">
+          <span className="text-muted-foreground">Total required investment</span>
+          <span className="font-semibold">{formatIndianCurrency(totalRequired)}</span>
+        </div>
+        <div className="flex items-center justify-between px-3 py-2">
+          <span className="text-muted-foreground">Your capital</span>
+          <span className="font-semibold">− {formatIndianCurrency(value)}</span>
+        </div>
+        {(otherFunding || 0) > 0 && (
+          <div className="flex items-center justify-between px-3 py-2">
+            <span className="text-muted-foreground">Other funding</span>
+            <span className="font-semibold">− {formatIndianCurrency(otherFunding)}</span>
+          </div>
+        )}
+        <div className="flex items-center justify-between bg-amber-50/60 px-3 py-2">
+          <span className="font-bold">Funding gap</span>
+          <span className="font-extrabold text-amber-800">{formatIndianCurrency(fundingGap)}</span>
+        </div>
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Possible funding need: Loan / Scheme / Partner / Other funding. We'll show loan options and EMI in the next steps.
+      </p>
+    </div>
+  );
+}
+
+function PriorityGroup({ title, tone, note, items }: {
+  title: string; tone: "emerald" | "amber" | "zinc"; note: string; items: string[];
+}) {
+  const tones: Record<string, string> = {
+    emerald: "border-emerald-200 bg-emerald-50/60 text-emerald-700",
+    amber: "border-amber-200 bg-amber-50/60 text-amber-700",
+    zinc: "border-zinc-200 bg-zinc-50/60 text-zinc-600",
+  };
+  return (
+    <div className={cn("rounded-lg border p-3", tones[tone])}>
+      <p className="text-xs font-bold uppercase tracking-wide">{title}</p>
+      <p className="mt-0.5 mb-2 text-[10px] text-muted-foreground">{note}</p>
+      {items.length > 0 ? (
+        <ul className="space-y-1 text-[11px] font-medium">
+          {items.map((it) => <li key={it}>• {it}</li>)}
+        </ul>
+      ) : (
+        <p className="text-[11px] text-muted-foreground">Nothing here for this business</p>
+      )}
+    </div>
+  );
+}
+
+function EstimateDetails({ business, subCategory, placeStatus, rentMonthly, scaleChoice, breakdown, costOverrides }: {
+  business: BusinessCategory | null; subCategory: BusinessSubCategory | null;
+  placeStatus: PlaceStatus; rentMonthly: number; scaleChoice: ScaleChoice;
+  breakdown: CostBreakdown; costOverrides: Record<string, number>;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="text-right">
-        <span className={cn("font-bold", highlight ? "text-primary" : "text-foreground")}>{value}</span>
-        {note && <span className="block text-[10px] text-muted-foreground">{note}</span>}
-      </span>
-    </div>
+    <details className="rounded-xl border border-border bg-white px-4 py-3">
+      <summary className="flex cursor-pointer select-none items-center gap-1.5 text-sm font-semibold text-primary">
+        <HelpCircle className="h-4 w-4" /> How did GramUdaan estimate this?
+      </summary>
+      <div className="mt-3 space-y-3 text-xs">
+        <div>
+          <p className="mb-1 font-bold text-foreground">This estimate is based on:</p>
+          <ul className="list-none space-y-1 text-muted-foreground">
+            <li>• Selected business: {business?.name}{subCategory ? ` — ${subCategory.name}` : ""}</li>
+            <li>• Starting scale: {SCALE_OPTIONS.find((s) => s.value === scaleChoice)?.label}</li>
+            <li>• Place arrangement: {PLACE_LABELS[placeStatus]}{placeStatus === "rent" && rentMonthly > 0 ? ` (₹${rentMonthly.toLocaleString("en-IN")}/month rent)` : ""}</li>
+            <li>• Equipment, initial inventory and working-capital requirements for this business type</li>
+            <li>• Your contribution{Object.keys(costOverrides).length > 0 ? " and your cost adjustments" : ""}</li>
+          </ul>
+        </div>
+        <div>
+          <p className="mb-1 font-bold text-foreground">How each figure was derived:</p>
+          <div className="divide-y divide-border/60 overflow-hidden rounded-lg border border-border/60">
+            {breakdown.components.filter((c) => c.amount > 0).map((c) => (
+              <div key={c.id} className="flex items-center justify-between gap-2 px-3 py-2">
+                <span className="flex items-center gap-2 text-muted-foreground">
+                  {c.label}
+                  <SourceTag source={costOverrides[c.id] !== undefined ? "YOUR ADJUSTMENT" : c.source} />
+                </span>
+                <span className="font-semibold">{formatIndianCurrency(c.amount)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        {breakdown.notes.length > 0 && (
+          <div>
+            <p className="mb-1 font-bold text-foreground">Important notes:</p>
+            <ul className="list-none space-y-1 text-muted-foreground">
+              {breakdown.notes.map((n, i) => <li key={i}>• {n}</li>)}
+            </ul>
+          </div>
+        )}
+        <p className="text-[11px] text-muted-foreground/80">
+          These are preliminary estimates for decision support — not exact quotes. Actual costs depend on local prices, supplier quotations and your final choices. Verify with a local supplier or bank before committing.
+        </p>
+      </div>
+    </details>
   );
 }
 

@@ -63,7 +63,7 @@ export function calculateProjectCost(
   options?: CostContext,
 ): ProjectCostBreakdown {
   let estimatedProjectCost: number;
-  if (options && (options.subCategoryId || options.placeStatus || options.scaleChoice)) {
+  if (options && (options.subCategoryId || options.placeStatus || options.scaleChoice || options.overrides)) {
     // Ownership- and scale-aware: the transparent cost breakdown is the
     // project cost. The user's place status directly changes the total.
     estimatedProjectCost = buildCostBreakdown(businessId, options).total;
@@ -280,7 +280,7 @@ export function calculateAffordability(
   let expectedMonthlyRevenue: number;
   let operatingCosts: number;
 
-  if (options && (options.subCategoryId || options.placeStatus || options.scaleChoice)) {
+  if (options && (options.subCategoryId || options.placeStatus || options.scaleChoice || options.overrides)) {
     // Sub-category / ownership / scale aware — same operating model the
     // profit timeline and scale analysis use.
     const model = buildBusinessModel(businessId, contribution, options);

@@ -71,6 +71,7 @@ export default function Plan() {
       userCapital: ob.capital,
       targetInvestment: ob.targetInvestment,
       otherFunding: ob.otherFunding,
+      overrides: ob.costOverrides,
       competitionDensity: ob.feasibility?.competition?.density,
     }),
     [ob.business?.id, ctx.subCategoryId, ctx.placeStatus, ctx.rentMonthly, ctx.scaleChoice, ob.capital, ob.targetInvestment, ob.otherFunding, ob.feasibility],
